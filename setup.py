@@ -16,9 +16,8 @@ long_description = """
 To find out what's new in this version of Fabric, please see `the changelog
 <http://fabfile.org/changelog.html>`_.
 
-You can also install the `in-development version
-<https://github.com/fabric/fabric/tarball/master#egg=fabric-dev>`_ using
-pip, with `pip install fabric==dev`.
+You can also install the `development version via ``pip install -e
+git+https://github.com/fabric/fabric/#egg=fabric``.
 
 ----
 
@@ -45,7 +44,7 @@ setup(
     url='http://fabfile.org',
     packages=find_packages(),
     test_suite='nose.collector',
-    tests_require=['nose', 'fudge<1.0', 'jinja2'],
+    tests_require=['nose<2.0', 'fudge<1.0', 'jinja2<3.0'],
     install_requires=install_requires,
     entry_points={
         'console_scripts': [

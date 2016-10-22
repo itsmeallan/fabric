@@ -15,7 +15,7 @@ from StringIO import StringIO
 
 
 from fabric.auth import get_password, set_password
-from fabric.utils import abort, handle_prompt_abort, warn
+from fabric.utils import handle_prompt_abort, warn
 from fabric.exceptions import NetworkError
 
 try:
@@ -140,7 +140,7 @@ class HostConnectionCache(dict):
         Force a new connection to ``key`` host string.
         """
         from fabric.state import env
-        
+
         user, host, port = normalize(key)
         key = normalize_to_string(key)
         seek_gateway = True
@@ -285,6 +285,16 @@ def normalize(host_string, omit_port=False):
     This function will process SSH config files if Fabric is configured to do
     so, and will use them to fill in some default values or swap in hostname
     aliases.
+
+    Regarding SSH port used:
+
+    * Ports explicitly given within host strings always win, no matter what.
+    * When the host string lacks a port, SSH-config driven port configurations
+      are used next.
+    * When the SSH config doesn't specify a port (at all - including a default
+      ``Host *`` block), Fabric's internal setting ``env.port`` is consulted.
+    * If ``env.port`` is empty, ``env.default_port`` is checked (which should
+      always be, as one would expect, port ``22``).
     """
     from fabric.state import env
     # Gracefully handle "empty" input by returning empty output
@@ -294,10 +304,11 @@ def normalize(host_string, omit_port=False):
     # values)
     r = parse_host_string(host_string)
     host = r['host']
+
     # Env values (using defaults if somehow earlier defaults were replaced with
     # empty values)
     user = env.user or env.local_user
-    port = env.port or env.default_port
+
     # SSH config data
     conf = ssh_config(host_string)
     # Only use ssh_config values if the env value appears unmodified from
@@ -305,17 +316,25 @@ def normalize(host_string, omit_port=False):
     # takes precedence.
     if user == env.local_user and 'user' in conf:
         user = conf['user']
-    if port == env.default_port and 'port' in conf:
-        port = conf['port']
+
     # Also override host if needed
     if 'hostname' in conf:
         host = conf['hostname']
     # Merge explicit user/port values with the env/ssh_config derived ones
     # (Host is already done at this point.)
     user = r['user'] or user
-    port = r['port'] or port
+
     if omit_port:
         return user, host
+
+    # determine port from ssh config if enabled
+    ssh_config_port = None
+    if env.use_ssh_config:
+        ssh_config_port = conf.get('port', None)
+
+    # port priority order (as in docstring)
+    port = r['port'] or ssh_config_port or env.port or env.default_port
+
     return user, host, port
 
 
@@ -396,7 +415,7 @@ def connect(user, host, port, cache, seek_gateway=True):
         Whether to try setting up a gateway socket for this connection. Used so
         the actual gateway connection can prevent recursion.
     """
-    from state import env, output
+    from fabric.state import env, output
 
     #
     # Initialization
@@ -423,7 +442,7 @@ def connect(user, host, port, cache, seek_gateway=True):
 
     # Initialize loop variables
     connected = False
-    password = get_password(user, host, port)
+    password = get_password(user, host, port, login_only=True)
     tries = 0
     sock = None
 
@@ -438,8 +457,9 @@ def connect(user, host, port, cache, seek_gateway=True):
             if seek_gateway:
                 sock = get_gateway(host, port, cache, replace=tries > 0)
 
-            # Ready to connect
-            client.connect(
+            # Set up kwargs (this lets us skip GSS-API kwargs unless explicitly
+            # set; otherwise older Paramiko versions will be cranky.)
+            kwargs = dict(
                 hostname=host,
                 port=int(port),
                 username=user,
@@ -449,8 +469,16 @@ def connect(user, host, port, cache, seek_gateway=True):
                 timeout=env.timeout,
                 allow_agent=not env.no_agent,
                 look_for_keys=not env.no_keys,
-                sock=sock
+                sock=sock,
             )
+            for suffix in ('auth', 'deleg_creds', 'kex'):
+                name = 'gss_{0}'.format(suffix)
+                val = env.get(name, None)
+                if val is not None:
+                    kwargs[name] = val
+
+            # Ready to connect
+            client.connect(**kwargs)
             connected = True
 
             # set a keepalive if desired
@@ -492,9 +520,15 @@ def connect(user, host, port, cache, seek_gateway=True):
             #
             # This also holds true for rejected/unknown host keys: we have to
             # guess based on other heuristics.
-            if e.__class__ is ssh.SSHException \
-                and (password or msg.startswith('Unknown server')) \
-                and not is_key_load_error(e):
+            if (
+                e.__class__ is ssh.SSHException
+                and (
+                    password
+                    or msg.startswith('Unknown server')
+                    or "not found in known_hosts" in msg
+                )
+                and not is_key_load_error(e)
+            ):
                 raise NetworkError(msg, e)
 
             # Otherwise, assume an auth exception, and prompt for new/better

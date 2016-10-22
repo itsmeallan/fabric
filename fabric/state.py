@@ -46,8 +46,8 @@ def _get_system_username():
     except ImportError:
         if win32:
             import win32api
-            import win32security
-            import win32profile
+            import win32security # noqa
+            import win32profile # noqa
             username = win32api.GetUserName()
     return username
 
@@ -141,6 +141,24 @@ env_options = [
         help="gateway host to connect through"
     ),
 
+    make_option('--gss-auth',
+        action='store_true',
+        default=None,
+        help="Use GSS-API authentication"
+    ),
+
+    make_option('--gss-deleg',
+        action='store_true',
+        default=None,
+        help="Delegate GSS-API client credentials or not"
+    ),
+
+    make_option('--gss-kex',
+        action='store_true',
+        default=None,
+        help="Perform GSS-API Key Exchange and user authentication"
+    ),
+
     make_option('--hide',
         metavar='LEVELS',
         help="comma-separated list of output levels to hide"
@@ -215,6 +233,11 @@ env_options = [
         action='store_true',
         default=False,
         help="reject unknown hosts"
+    ),
+
+    make_option('--sudo-password',
+        default=None,
+        help="password for use with sudo only",
     ),
 
     make_option('--system-known-hosts',
@@ -324,6 +347,9 @@ env = _AttributeDict({
     'effective_roles': [],
     'exclude_hosts': [],
     'gateway': None,
+    'gss_auth': None,
+    'gss_deleg': None,
+    'gss_kex': None,
     'host': None,
     'host_string': None,
     'lcwd': '',  # Must be empty string, not None, for concatenation purposes
@@ -341,6 +367,7 @@ env = _AttributeDict({
     'skip_bad_hosts': False,
     'skip_unknown_tasks': False,
     'ssh_config_path': default_ssh_config_path,
+    'sudo_passwords': {},
     'ok_ret_codes': [0],     # a list of return codes that indicate success
     # -S so sudo accepts passwd via stdin, -p with our known-value prompt for
     # later detection (thus %s -- gets filled with env.sudo_prompt at runtime)

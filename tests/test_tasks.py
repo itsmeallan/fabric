@@ -1,9 +1,8 @@
 from __future__ import with_statement
 
-from contextlib import contextmanager
 from fudge import Fake, patched_context, with_fakes
 import unittest
-from nose.tools import eq_, raises, ok_
+from nose.tools import raises, ok_
 import random
 import sys
 
@@ -11,10 +10,9 @@ import fabric
 from fabric.tasks import WrappedCallableTask, execute, Task, get_task_details
 from fabric.main import display_command
 from fabric.api import run, env, settings, hosts, roles, hide, parallel, task, runs_once, serial
-from fabric.network import from_dict
 from fabric.exceptions import NetworkError
 
-from utils import eq_, FabricTest, aborts, mock_streams
+from utils import eq_, FabricTest, aborts, mock_streams, support
 from server import server
 
 
@@ -33,7 +31,7 @@ class TestWrappedCallableTask(unittest.TestCase):
 
         def foo(): pass
         try:
-            task = WrappedCallableTask(foo, *args)
+            WrappedCallableTask(foo, *args)
         except TypeError:
             msg = "__init__ raised a TypeError, meaning args weren't handled"
             self.fail(msg)
@@ -44,7 +42,7 @@ class TestWrappedCallableTask(unittest.TestCase):
 
         def foo(): pass
         try:
-            task = WrappedCallableTask(foo, **kwargs)
+            WrappedCallableTask(foo, **kwargs)
         except TypeError:
             self.fail(
                 "__init__ raised a TypeError, meaning kwargs weren't handled")
@@ -52,12 +50,12 @@ class TestWrappedCallableTask(unittest.TestCase):
     def test_allows_any_number_of_args(self):
         args = [i for i in range(random.randint(0, 10))]
         def foo(): pass
-        task = WrappedCallableTask(foo, *args)
+        WrappedCallableTask(foo, *args)
 
     def test_allows_any_number_of_kwargs(self):
         kwargs = dict([("key%d" % i, i) for i in range(random.randint(0, 10))])
         def foo(): pass
-        task = WrappedCallableTask(foo, **kwargs)
+        WrappedCallableTask(foo, **kwargs)
 
     def test_run_is_wrapped_callable(self):
         def foo(): pass
@@ -416,6 +414,50 @@ class TestExecute(FabricTest):
             run = Fake(callable=True, expect_call=True)
         mytask = MyTask()
         execute(mytask)
+
+    @server(port=2200)
+    @server(port=2201)
+    def test_nested_execution_with_explicit_ports(self):
+        """
+        nested executions should work with defined ports
+        """
+
+        def expect_host_string_port():
+            eq_(env.port, '2201')
+            return "bar"
+
+        def expect_env_port():
+            eq_(env.port, '2202')
+
+        def expect_per_host_config_port():
+            eq_(env.port, '664')
+            run = execute(expect_default_config_port, hosts=['some_host'])
+            return run['some_host']
+
+        def expect_default_config_port():
+            # uses `Host *` in ssh_config
+            eq_(env.port, '666')
+            return "bar"
+
+        def main_task():
+            eq_(env.port, '2200')
+
+            execute(expect_host_string_port, hosts=['localhost:2201'])
+
+            with settings(port='2202'):
+                execute(expect_env_port, hosts=['localhost'])
+
+            with settings(
+                use_ssh_config=True,
+                ssh_config_path=support("ssh_config")
+            ):
+                run = execute(expect_per_host_config_port, hosts='myhost')
+
+            return run['myhost']
+
+        run = execute(main_task, hosts=['localhost:2200'])
+
+        eq_(run['localhost:2200'], 'bar')
 
 
 class TestExecuteEnvInteractions(FabricTest):

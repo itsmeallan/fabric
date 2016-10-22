@@ -62,7 +62,7 @@ class SFTP(object):
         rlist = self.ftp.listdir(dirpart)
 
         names = fnfilter([f for f in rlist if not f[0] == '.'], pattern)
-        ret = [path]
+        ret = []
         if len(names):
             s = '/'
             ret = [dirpart.rstrip(s) + s + name.lstrip(s) for name in names]
@@ -130,9 +130,10 @@ class SFTP(object):
         }
 
         if local_is_path:
-            # Naive fix to issue #711
-            escaped_path = re.sub(r'(%[^()]*\w)', r'%\1', local_path)
-            local_path = os.path.abspath(escaped_path % path_vars )
+            # Fix for issue #711 and #1348 - escape %'s as well as possible.
+            format_re = r'(%%(?!\((?:%s)\)\w))' % '|'.join(path_vars.keys())
+            escaped_path = re.sub(format_re, r'%\1', local_path)
+            local_path = os.path.abspath(escaped_path % path_vars)
 
             # Ensure we give ssh.SFTPCLient a file by prepending and/or
             # creating local directories as appropriate.

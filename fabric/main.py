@@ -9,6 +9,7 @@ The other callables defined in this module are internal only. Anything useful
 to individuals leveraging Fabric as a library, should be kept elsewhere.
 """
 import getpass
+import inspect
 from operator import isMappingType
 from optparse import OptionParser
 import os
@@ -125,6 +126,7 @@ def is_classic_task(tup):
             callable(func)
             and (func not in _internals)
             and not name.startswith('_')
+            and not (inspect.isclass(func) and issubclass(func, Exception))
         )
     # Handle poorly behaved __eq__ implementations
     except (ValueError, TypeError):
@@ -298,6 +300,12 @@ def parse_options():
         action='store_true',
         default=False,
         help="Force password prompt up-front"
+    )
+
+    parser.add_option('--initial-sudo-password-prompt',
+        action='store_true',
+        default=False,
+        help="Force sudo password prompt up-front"
     )
 
     # List Fab commands found in loaded fabfiles/source files
@@ -728,6 +736,11 @@ Remember that -f can be used to specify fabfile path, and use -h for help.""")
         if options.initial_password_prompt:
             prompt = "Initial value for env.password: "
             state.env.password = getpass.getpass(prompt)
+
+        # Ditto sudo_password
+        if options.initial_sudo_password_prompt:
+            prompt = "Initial value for env.sudo_password: "
+            state.env.sudo_password = getpass.getpass(prompt)
 
         if state.output.debug:
             names = ", ".join(x[0] for x in commands_to_run)
